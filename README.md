@@ -1,41 +1,37 @@
 # ai-rag-pipeline-supabase
 
-This project implements a Retrieval-Augmented Generation (RAG) pipeline with multiple variations, leveraging Langchain, HuggingFace, Chroma, and Supabase.
+This project implements a Retrieval-Augmented Generation (RAG) pipeline leveraging Langchain, HuggingFace, and Supabase. The configuration is optimized for minimal footprint models that can run efficiently locally.
 
 ## Architecture Highlights
 - **Document Loading:** Reads `.txt` files from a local `docs/` directory.
-- **Embeddings:** Uses local HuggingFace sentence transformers (`all-MiniLM-L6-v2`) for embeddings.
-- **LLM:** Uses `Qwen/Qwen2-72B-Instruct` via `HuggingFaceEndpoint` for response generation.
-- **Vector Stores:** Supports both local ChromaDB and cloud-based Supabase (pgvector).
-- **Chunking Strategies:** Includes standard character-based chunking and advanced **semantic chunking**.
-- **History-Aware Generation:** Includes a chat interface that remembers conversation history and rephrases questions contextually.
+- **Embeddings:** Uses local HuggingFace embedding model (`TaylorAI/bge-micro-v2`) via `HuggingFaceEmbeddings`.
+- **LLM:** Uses local inference with `HuggingFaceTB/SmolLM-135M-Instruct` via `HuggingFacePipeline` for response generation.
+- **Vector Stores:** Integrates with cloud-based Supabase using the `pgvector` extension.
+- **Chunking Strategies:** Incorporates advanced **semantic chunking** to intelligently group sentences.
+- **History-Aware Generation:** Includes a terminal chat interface that remembers conversation history and rephrases questions contextually.
 
 ## Key Files
 
-### `1_ingestion_pipeline.py`
-A baseline ingestion script that:
-1. Loads text documents from the `docs/` folder.
-2. Splits them into chunks using a `CharacterTextSplitter`.
-3. Creates embeddings and stores them locally using ChromaDB in `db/chroma_db`.
-
-### `1C_ingestion_semantic_chunking.py`
-An advanced ingestion script that:
+### `Step1_ingestion_semantic_chunking.py`
+The ingestion script responsible for data preparation:
 1. Loads documents from the `docs/` folder.
-2. Uses Langchain's `SemanticChunker` to intelligently group text by semantic meaning rather than arbitrary character counts.
-3. Stores embeddings in a **Supabase** database using `pgvector`. This requires setting `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` `.env` variables.
+2. Uses Langchain's `SemanticChunker` to semantically group sentences together with an optimized threshold.
+3. Retrieves or generates vector embeddings using `TaylorAI/bge-micro-v2`.
+4. Stores these embeddings directly into your **Supabase** database. Requires 'HF_TOKEN' `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` in your `.env`.
 
-### `4A_history_aware_generation_supabase.py`
-A comprehensive RAG interaction script that:
-1. Connects to the Supabase vector store populated by the ingestion scripts.
-2. Provides a conversational loop (`start_chat`).
-3. Takes conversation history into account, rewriting follow-up queries so they are self-contained.
-4. Retrieves relevant context and generates an answer using the Qwen model.
+### `Step2_history_aware_generation_supabase.py`
+The interaction script that interfaces with your vector store:
+1. Connects to the Supabase vector store populated earlier.
+2. Initializes the minimal RAG generation language model (`HuggingFaceTB/SmolLM-135M-Instruct`) locally.
+3. Provides a continuous conversational terminal loop (`start_chat`).
+4. Re-phrases follow-up queries based on conversational history.
+5. Retreives relevant context and synthesizes natural language answers.
 *Note: Contains a patch for LangChain's Supabase vector store integration to properly handle filtering with newer Supabase client versions.*
 
 ### `schema.sql`
 A SQL script containing the expected database schema for Supabase:
 - Enables the pgvector extension.
-- Creates the `documents` table (`id`, `content`, `metadata`, `embedding`).
+- Creates the `documents` table (`id`, `content`, `metadata`, `embedding`). *Note: Dimension size is 384 for `bge-micro-v2`.*
 - Creates the `match_documents` PostgreSQL function used to perform cosine similarity searches.
 
 ## Setup Instructions
@@ -47,27 +43,28 @@ A SQL script containing the expected database schema for Supabase:
    ```
 
 2. **Environment Variables**
-   Create a `.env` file in the root directory with the following variables (if using Supabase/HuggingFace APIs):
+   Create a `.env` file in the root directory with your Supabase credentials.
    ```
+   HF_TOKEN=your_huggingface_api_token
    SUPABASE_URL=your_supabase_project_url
    SUPABASE_SERVICE_KEY=your_supabase_service_key
-   HF_TOKEN=your_huggingface_api_token
    ```
+   *(If you wish to use HuggingFace inference APIs instead of running locally, you also need to set `HF_TOKEN`)*
 
 3. **Database Setup (Supabase)**
-   If using the Supabase scripts (`1C_...` or `4A_...`), execute the contents of `schema.sql` in your Supabase SQL Editor.
+   Execute the contents of `schema.sql` in your Supabase SQL Editor to set up the `pgvector` table and similarity search function.
 
 4. **Add Documents**
-   Create a `docs/` folder in the root directory and place your `.txt` files inside.
+   Create a `docs/` folder in the root directory and place your data or `.txt` files inside.
 
 5. **Run Ingestion**
-   Execute one of the ingestion scripts to build the vector store:
+   Execute the ingestion script to process your documents and build the vector store within Supabase:
    ```bash
    python Step1_ingestion_semantic_chunking.py
    ```
 
 6. **Start the Chat Interface**
-   Run the generation script to query your documents:
+   Once data is successfully ingested, start the generation script to query your documents:
    ```bash
    python Step2_history_aware_generation_supabase.py
    ```
